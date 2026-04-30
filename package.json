@@ -1,0 +1,17 @@
+{
+  "name": "image-gen",
+  "version": "1.0.0",
+  "description": "CLI for generating images via an OpenAI-compatible API",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "tsx src/index.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "openai": "^6.37.0"
+  }
+}
