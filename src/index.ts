@@ -1,3 +1,5 @@
+import { writeFileSync, mkdirSync } from "node:fs";
+import { resolve, dirname } from "node:path";
 import "dotenv/config";
 import OpenAI from "openai";
 
@@ -37,6 +39,53 @@ function parseFlags(args: string[], defs: Record<string, { alias?: string; count
 }
 
 // ── Commands ─────────────────────────────────────────────────────────────
+
+async function cmdGenerate(remaining: string[], flags: Record<string, string[]>) {
+  const prompt = remaining.join(" ");
+  if (!prompt) { console.error("Error: prompt is required"); process.exit(1); }
+
+  const output = flags.output?.[0] ?? flags.o?.[0] ?? "";
+  const size = flags.size?.[0] ?? flags.s?.[0] ?? "1024x1024";
+  const quality = flags.quality?.[0] ?? flags.q?.[0] ?? "medium";
+  const n = Number(flags.n?.[0] ?? flags.count?.[0] ?? 1);
+  const outputDir = flags["output-dir"]?.[0] ?? flags.d?.[0] ?? ".";
+
+  console.log(`Text-to-image generation`);
+  console.log(`  Model:   gpt-image-2`);
+  console.log(`  Prompt:  "${prompt}"`);
+  console.log(`  Size:    ${size}`);
+  console.log(`  Quality: ${quality}`);
+  console.log(`  Count:   ${n}\n`);
+
+  const resp = await client.images.generate({
+    model: "gpt-image-2",
+    prompt,
+    n,
+    size: size as any,
+    quality: quality as any,
+  });
+
+  const saved: string[] = [];
+  for (let i = 0; i < resp.data.length; i++) {
+    const item = resp.data[i];
+    if (item.revised_prompt) console.log(`\nRevised prompt: "${item.revised_prompt}"`);
+
+    if (item.b64_json) {
+      const buf = Buffer.from(item.b64_json, "base64");
+      const fname = (output && resp.data.length === 1) ? output : resolve(outputDir, `generated_${Date.now()}_${i}.png`);
+      mkdirSync(dirname(fname), { recursive: true });
+      writeFileSync(fname, buf);
+      saved.push(fname);
+      console.log(`Saved: ${fname}  (${(buf.length / 1024).toFixed(1)} KB)`);
+    } else if (item.url) {
+      console.log(`URL: ${item.url}`);
+      saved.push(item.url);
+    }
+  }
+
+  if ((resp as any).usage) console.log(`Tokens: ${JSON.stringify((resp as any).usage)}`);
+  return saved;
+}
 
 async function cmdListModels() {
   const resp = await client.models.list();
@@ -89,11 +138,11 @@ async function main() {
 
   switch (cmd) {
     case "list-models": case "models": await cmdListModels(); break;
-    case "generate": case "gen": console.log("generate (coming soon)"); break;
+    case "generate": case "gen": await cmdGenerate(remaining, flags); break;
     case "batch": console.log("batch (coming soon)"); break;
     default:
       // implicit generate
-      console.log("generate (coming soon)");
+      await cmdGenerate(raw, {});
   }
 }
 
