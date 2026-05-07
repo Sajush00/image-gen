@@ -1,5 +1,5 @@
-import { writeFileSync, mkdirSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
+import { resolve, extname, dirname } from "node:path";
 import "dotenv/config";
 import OpenAI from "openai";
 
@@ -44,26 +44,76 @@ async function cmdGenerate(remaining: string[], flags: Record<string, string[]>)
   const prompt = remaining.join(" ");
   if (!prompt) { console.error("Error: prompt is required"); process.exit(1); }
 
+  const refs = flags.ref ?? [];
   const output = flags.output?.[0] ?? flags.o?.[0] ?? "";
   const size = flags.size?.[0] ?? flags.s?.[0] ?? "1024x1024";
   const quality = flags.quality?.[0] ?? flags.q?.[0] ?? "medium";
   const n = Number(flags.n?.[0] ?? flags.count?.[0] ?? 1);
   const outputDir = flags["output-dir"]?.[0] ?? flags.d?.[0] ?? ".";
 
-  console.log(`Text-to-image generation`);
+  const hasRefs = refs.length > 0;
+
+  console.log(`${hasRefs ? "Image-to-image" : "Text-to-image"} generation`);
   console.log(`  Model:   gpt-image-2`);
   console.log(`  Prompt:  "${prompt}"`);
+  if (hasRefs) console.log(`  Refs:    ${refs.join(", ")}`);
   console.log(`  Size:    ${size}`);
   console.log(`  Quality: ${quality}`);
   console.log(`  Count:   ${n}\n`);
 
-  const resp = await client.images.generate({
-    model: "gpt-image-2",
-    prompt,
-    n,
-    size: size as any,
-    quality: quality as any,
-  });
+  let resp: OpenAI.Images.ImagesResponse;
+
+  if (hasRefs) {
+    // image-to-image via edits endpoint. GPT image models accept up to 16 refs.
+    if (refs.length > 16) throw new Error("At most 16 reference images are supported");
+
+    const files = await Promise.all(refs.map(async (refPath, idx) => {
+      let image: Buffer;
+      let mime = "image/png";
+      let name = `reference_${idx}.png`;
+
+      if (refPath.match(/^https?:\/\//)) {
+        const res = await fetch(refPath);
+        if (!res.ok) throw new Error(`Failed to fetch ref image ${refPath}: ${res.status}`);
+        image = Buffer.from(await res.arrayBuffer());
+        mime = res.headers.get("content-type")?.split(";")[0] || mime;
+        const ext = mime.split("/")[1] || "png";
+        name = `reference_${idx}.${ext}`;
+      } else if (refPath.startsWith("data:")) {
+        const m = refPath.match(/^data:(image\/\w+);base64,(.+)$/);
+        if (!m) throw new Error("Unsupported data URI format");
+        mime = m[1];
+        image = Buffer.from(m[2], "base64");
+        name = `reference_${idx}.${mime.split("/")[1] || "png"}`;
+      } else {
+        if (!existsSync(refPath)) throw new Error(`Reference file not found: ${refPath}`);
+        image = readFileSync(refPath);
+        const ext = extname(refPath).slice(1).toLowerCase() || "png";
+        mime = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "webp" ? "image/webp" : "image/png";
+        name = refPath.split(/[\\/]/).pop() || name;
+      }
+
+      // Use the Node.js File API (available in Node 20+) to create a File-like object.
+      return new File([image], name, { type: mime });
+    }));
+
+    resp = await client.images.edit({
+      model: "gpt-image-2",
+      image: files as any,
+      prompt,
+      n,
+      size: size as any,
+      quality: quality as any,
+    });
+  } else {
+    resp = await client.images.generate({
+      model: "gpt-image-2",
+      prompt,
+      n,
+      size: size as any,
+      quality: quality as any,
+    });
+  }
 
   const saved: string[] = [];
   for (let i = 0; i < resp.data.length; i++) {
@@ -112,9 +162,18 @@ Commands:
                                 Generate images from text prompt
   batch [opts]                  Generate multiple images in parallel
 
+Generate options:
+  -r, --ref <path>      Reference image (repeatable; local file, URL, or data URI)
+  -o, --output <path>   Output filename (auto-generated if omitted)
+  -s, --size <WxH>      Image size (default: 1024x1024)
+  -q, --quality <q>     low | medium | high (default: medium)
+  -n, --count <n>       Number of images (default: 1)
+  -d, --output-dir <d>  Output directory (default: .)
+
 Examples:
   npm run dev -- models
   npm run dev -- generate "a red cat on a sunny windowsill"
+  npm run dev -- generate -r input.png "make this cat blue"
   npm run dev -- batch "prompt one" "prompt two" "prompt three"`);
 }
 
