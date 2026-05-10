@@ -137,6 +137,82 @@ async function cmdGenerate(remaining: string[], flags: Record<string, string[]>)
   return saved;
 }
 
+async function cmdBatch(remaining: string[], flags: Record<string, string[]>) {
+  const filePath = flags.f?.[0] ?? flags.file?.[0] ?? "";
+  const promptsPath = flags.p?.[0] ?? flags.prompts?.[0] ?? "";
+  const concurrency = Math.max(1, Number(flags.c?.[0] ?? flags.concurrency?.[0] ?? 3));
+  const outputDir = flags.d?.[0] ?? flags["output-dir"]?.[0] ?? ".";
+  const size = flags.s?.[0] ?? flags.size?.[0] ?? "1024x1024";
+  const quality = flags.q?.[0] ?? flags.quality?.[0] ?? "medium";
+
+  interface Task {
+    prompt: string;
+    refs?: string[];
+    output?: string;
+    size?: string;
+    quality?: string;
+  }
+
+  let tasks: Task[];
+
+  if (filePath) {
+    tasks = JSON.parse(readFileSync(filePath, "utf-8"));
+  } else if (promptsPath) {
+    tasks = readFileSync(promptsPath, "utf-8")
+      .split("\n").map((l) => l.trim()).filter(Boolean)
+      .map((p) => ({ prompt: p }));
+  } else {
+    tasks = remaining.map((p) => ({ prompt: p }));
+  }
+
+  if (tasks.length === 0) { console.error("Error: no tasks provided"); process.exit(1); }
+
+  console.log(`Batch: ${tasks.length} tasks, concurrency: ${concurrency}\n`);
+
+  const results: { idx: number; prompt: string; files: string[]; ok: boolean; error?: string }[] = [];
+  let active = 0;
+  let i = 0;
+  let done = 0;
+
+  await new Promise<void>((resolve) => {
+    function next() {
+      while (active < concurrency && i < tasks.length) {
+        const idx = i++;
+        const task = tasks[idx];
+        active++;
+
+        const taskFlags: Record<string, string[]> = {};
+        taskFlags.size = [task.size ?? size];
+        taskFlags.quality = [task.quality ?? quality];
+        if (task.output) taskFlags.output = [task.output];
+        if (task.refs) taskFlags.ref = task.refs;
+        taskFlags["output-dir"] = [outputDir];
+        taskFlags.n = ["1"];
+
+        const promptParts = task.prompt.split(" ");
+        const fakeRemaining = promptParts;
+
+        const p = cmdGenerate(fakeRemaining, taskFlags)
+          .then((files) => { results[idx] = { idx, prompt: task.prompt, files, ok: true }; })
+          .catch((err: Error) => { results[idx] = { idx, prompt: task.prompt, files: [], ok: false, error: err.message }; })
+          .finally(() => {
+            done++;
+            active--;
+            const r = results[idx];
+            console.log(`[${done}/${tasks.length}] ${task.prompt.slice(0, 60)}${task.prompt.length > 60 ? "..." : ""} ${r.ok ? "OK" : `FAILED: ${r.error}`}`);
+            if (done >= tasks.length) resolve();
+            else next();
+          });
+      }
+    }
+    next();
+  });
+
+  const succeeded = results.filter((r) => r.ok).length;
+  const failed = results.filter((r) => !r.ok).length;
+  console.log(`\nDone! ${succeeded} OK, ${failed} failed.`);
+}
+
 async function cmdListModels() {
   const resp = await client.models.list();
   console.log("Available models:\n");
@@ -170,11 +246,30 @@ Generate options:
   -n, --count <n>       Number of images (default: 1)
   -d, --output-dir <d>  Output directory (default: .)
 
+Batch options:
+  -f, --file <path>     JSON array of {prompt, refs?, size?, quality?}
+  -p, --prompts <path>  Text file, one prompt per line
+  -c, --concurrency <n> Max parallel (default: 3)
+  -d, --output-dir <d>  Output directory (default: .)
+  -s, --size <WxH>      Default size
+  -q, --quality <q>     Default quality
+
+Examples:
+  -r, --ref <path>      Reference image (repeatable; local file, URL, or data URI)
+  -o, --output <path>   Output filename (auto-generated if omitted)
+  -s, --size <WxH>      Image size (default: 1024x1024)
+  -q, --quality <q>     low | medium | high (default: medium)
+  -n, --count <n>       Number of images (default: 1)
+  -d, --output-dir <d>  Output directory (default: .)
+
 Examples:
   npm run dev -- models
   npm run dev -- generate "a red cat on a sunny windowsill"
   npm run dev -- generate -r input.png "make this cat blue"
-  npm run dev -- batch "prompt one" "prompt two" "prompt three"`);
+  npm run dev -- batch "prompt one" "prompt two" "prompt three"
+  npm run dev -- batch -f tasks.json -c 3 -d ./output
+  npm run dev -- batch -p prompts.txt -c 5`);
+}
 }
 
 async function main() {
@@ -198,7 +293,7 @@ async function main() {
   switch (cmd) {
     case "list-models": case "models": await cmdListModels(); break;
     case "generate": case "gen": await cmdGenerate(remaining, flags); break;
-    case "batch": console.log("batch (coming soon)"); break;
+    case "batch": await cmdBatch(remaining, flags); break;
     default:
       // implicit generate
       await cmdGenerate(raw, {});
