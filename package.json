@@ -3,9 +3,14 @@
   "version": "1.0.0",
   "description": "CLI for generating images via an OpenAI-compatible API",
   "type": "module",
-  "private": true,
+  "main": "dist/index.js",
+  "bin": {
+    "image-gen": "./src/index.ts"
+  },
   "scripts": {
-    "dev": "tsx src/index.ts"
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
   },
   "devDependencies": {
     "tsx": "^4.21.0"
