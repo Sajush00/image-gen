@@ -151,6 +151,20 @@ npm run dev -- batch -f tasks.json -c 3 -d ./output
 | `IMAGE_GEN_BASE_URL`    | API base URL                    | `http://localhost:8317/v1`    |
 | `IMAGE_GEN_API_KEY`     | API key                         | `p`                           |
 
+## Using with Codex
+
+Codex CLI has a built-in `image_gen` tool but doesn't expose a standalone API endpoint. To use this CLI with Codex's image generation, run an OpenAI-compatible proxy like [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) that wraps Codex.
+
+After you set up the proxy, point image-gen at it:
+
+```bash
+IMAGE_GEN_BASE_URL=http://localhost:8300/v1
+IMAGE_GEN_API_KEY=sk-proxy-your-secret-key
+npm run dev -- generate "a red cat on a sunny windowsill"
+```
+
+All features — text-to-image, image-to-image with references, batch generation — work transparently through the proxy.
+
 ## Skills
 
 The `skills/` directory contains [PI](https://github.com/earendil-works/pi-coding-agent) skill definitions for agent-assisted workflows:
