@@ -94,7 +94,7 @@ async function cmdGenerate(remaining: string[], flags: Record<string, string[]>)
       }
 
       // Use the Node.js File API (available in Node 20+) to create a File-like object.
-      return new File([image], name, { type: mime });
+      return new File([new Uint8Array(image)], name, { type: mime });
     }));
 
     resp = await client.images.edit({
@@ -116,13 +116,14 @@ async function cmdGenerate(remaining: string[], flags: Record<string, string[]>)
   }
 
   const saved: string[] = [];
-  for (let i = 0; i < resp.data.length; i++) {
-    const item = resp.data[i];
+  const data = resp.data ?? [];
+  for (let i = 0; i < data.length; i++) {
+    const item = data[i];
     if (item.revised_prompt) console.log(`\nRevised prompt: "${item.revised_prompt}"`);
 
     if (item.b64_json) {
       const buf = Buffer.from(item.b64_json, "base64");
-      const fname = (output && resp.data.length === 1) ? output : resolve(outputDir, `generated_${Date.now()}_${i}.png`);
+      const fname = (output && data.length === 1) ? output : resolve(outputDir, `generated_${Date.now()}_${i}.png`);
       mkdirSync(dirname(fname), { recursive: true });
       writeFileSync(fname, buf);
       saved.push(fname);
@@ -269,7 +270,6 @@ Examples:
   npm run dev -- batch "prompt one" "prompt two" "prompt three"
   npm run dev -- batch -f tasks.json -c 3 -d ./output
   npm run dev -- batch -p prompts.txt -c 5`);
-}
 }
 
 async function main() {
