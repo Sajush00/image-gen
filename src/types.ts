@@ -1,5 +1,3 @@
-export type CliFlags = Record<string, string[]>;
-
 export interface GenerateOptions {
   prompt: string;
   refs: string[];
@@ -8,6 +6,15 @@ export interface GenerateOptions {
   quality: string;
   count: number;
   outputDir: string;
+}
+
+export interface BatchOptions {
+  file?: string;
+  prompts?: string;
+  concurrency: number;
+  outputDir: string;
+  size: string;
+  quality: string;
 }
 
 export interface BatchTask {

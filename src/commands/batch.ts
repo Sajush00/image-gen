@@ -1,25 +1,18 @@
 import { readFileSync } from "node:fs";
 import { cmdGenerate } from "./generate.js";
-import type { BatchResult, BatchTask, CliFlags } from "../types.js";
+import type { BatchOptions, BatchResult, BatchTask, GenerateOptions } from "../types.js";
 
-export async function cmdBatch(remaining: string[], flags: CliFlags) {
-  const filePath = flags.f?.[0] ?? flags.file?.[0] ?? "";
-  const promptsPath = flags.p?.[0] ?? flags.prompts?.[0] ?? "";
-  const concurrency = Math.max(1, Number(flags.c?.[0] ?? flags.concurrency?.[0] ?? 3));
-  const outputDir = flags.d?.[0] ?? flags["output-dir"]?.[0] ?? ".";
-  const size = flags.s?.[0] ?? flags.size?.[0] ?? "1024x1024";
-  const quality = flags.q?.[0] ?? flags.quality?.[0] ?? "medium";
-
+export async function cmdBatch(promptArgs: string[], options: BatchOptions) {
   let tasks: BatchTask[];
 
-  if (filePath) {
-    tasks = JSON.parse(readFileSync(filePath, "utf-8"));
-  } else if (promptsPath) {
-    tasks = readFileSync(promptsPath, "utf-8")
+  if (options.file) {
+    tasks = JSON.parse(readFileSync(options.file, "utf-8"));
+  } else if (options.prompts) {
+    tasks = readFileSync(options.prompts, "utf-8")
       .split("\n").map((l) => l.trim()).filter(Boolean)
       .map((p) => ({ prompt: p }));
   } else {
-    tasks = remaining.map((p) => ({ prompt: p }));
+    tasks = promptArgs.map((p) => ({ prompt: p }));
   }
 
   if (tasks.length === 0) {
@@ -27,7 +20,7 @@ export async function cmdBatch(remaining: string[], flags: CliFlags) {
     process.exit(1);
   }
 
-  console.log(`Batch: ${tasks.length} tasks, concurrency: ${concurrency}\n`);
+  console.log(`Batch: ${tasks.length} tasks, concurrency: ${options.concurrency}\n`);
 
   const results: BatchResult[] = [];
   let active = 0;
@@ -36,21 +29,22 @@ export async function cmdBatch(remaining: string[], flags: CliFlags) {
 
   await new Promise<void>((resolve) => {
     function next() {
-      while (active < concurrency && i < tasks.length) {
+      while (active < options.concurrency && i < tasks.length) {
         const idx = i++;
         const task = tasks[idx];
         active++;
 
-        const taskFlags: CliFlags = {
-          size: [task.size ?? size],
-          quality: [task.quality ?? quality],
-          "output-dir": [outputDir],
-          n: ["1"],
+        const generateOptions: GenerateOptions = {
+          prompt: task.prompt,
+          refs: task.refs ?? [],
+          output: task.output ?? "",
+          size: task.size ?? options.size,
+          quality: task.quality ?? options.quality,
+          count: 1,
+          outputDir: options.outputDir,
         };
-        if (task.output) taskFlags.output = [task.output];
-        if (task.refs) taskFlags.ref = task.refs;
 
-        const p = cmdGenerate(task.prompt.split(" "), taskFlags)
+        const p = cmdGenerate(generateOptions)
           .then((files) => { results[idx] = { idx, prompt: task.prompt, files, ok: true }; })
           .catch((err: Error) => { results[idx] = { idx, prompt: task.prompt, files: [], ok: false, error: err.message }; })
           .finally(() => {

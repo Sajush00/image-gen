@@ -1,27 +1,8 @@
 import { requestImages } from "../lib/images.js";
 import { saveImageResponse } from "../lib/output.js";
-import type { CliFlags, GenerateOptions } from "../types.js";
+import type { GenerateOptions } from "../types.js";
 
-export function getGenerateOptions(remaining: string[], flags: CliFlags): GenerateOptions {
-  const prompt = remaining.join(" ");
-  if (!prompt) {
-    console.error("Error: prompt is required");
-    process.exit(1);
-  }
-
-  return {
-    prompt,
-    refs: flags.ref ?? [],
-    output: flags.output?.[0] ?? flags.o?.[0] ?? "",
-    size: flags.size?.[0] ?? flags.s?.[0] ?? "1024x1024",
-    quality: flags.quality?.[0] ?? flags.q?.[0] ?? "medium",
-    count: Number(flags.n?.[0] ?? flags.count?.[0] ?? 1),
-    outputDir: flags["output-dir"]?.[0] ?? flags.d?.[0] ?? ".",
-  };
-}
-
-export async function cmdGenerate(remaining: string[], flags: CliFlags) {
-  const options = getGenerateOptions(remaining, flags);
+export async function cmdGenerate(options: GenerateOptions) {
   const hasRefs = options.refs.length > 0;
 
   console.log(`${hasRefs ? "Image-to-image" : "Text-to-image"} generation`);
