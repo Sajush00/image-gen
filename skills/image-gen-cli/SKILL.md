@@ -9,7 +9,7 @@ CLI for generating images with the `gpt-image-2` model via an OpenAI-compatible 
 
 ## Setup
 
-Work from:
+Work from the repository root:
 
 ```bash
 cd path/to/image-gen
